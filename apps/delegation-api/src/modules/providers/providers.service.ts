@@ -22,7 +22,6 @@ import { ProviderDelegation } from './dto/provider-delegation.dto';
 
 @Injectable()
 export class ProvidersService {
-
   constructor(
     private cacheManagerService: CacheManagerService,
     private providerManager: ProviderManagerService,
@@ -30,9 +29,8 @@ export class ProvidersService {
     private delegationAprService: DelegationAprService,
     private redlockService: RedlockService,
     private elrondElasticService: ElrondElasticService,
-    @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger
-  ) {
-  }
+    @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+  ) { }
 
   // Warm cache for providers / 1 minute
   @Cron(CronExpression.EVERY_MINUTE)
@@ -64,63 +62,89 @@ export class ProvidersService {
     const allContracts = await this.providerManager.getAllContractAddresses();
     if (!!cachedProviders && cachedProviders.length === allContracts.length) {
       if (featured) {
-        return cachedProviders.filter(p => p.featured === true);
+        return cachedProviders.filter((p) => p.featured === true);
       }
       return cachedProviders;
     }
     return this.getProviders(featured);
   }
 
-  private async getProviders(featured = false) : Promise<Provider[]> {
+  private async getProviders(featured = false): Promise<Provider[]> {
     const allContracts = await this.providerManager.getAllContractAddresses();
-    const allProviders = await this.providerManager.getAllProvidersWithData(allContracts);
+    const allProviders = await this.providerManager.getAllProvidersWithData(
+      allContracts,
+    );
     if (!featured) {
       return await this.getProvidersForApi(allProviders);
     }
 
-    const featuredProviders = process.env.FEATURED_PROVIDERS.split(',')
-      .map((entry) => {
+    const featuredProviders = process.env.FEATURED_PROVIDERS.split(',').map(
+      (entry) => {
         return entry.toLowerCase().trim();
-      });
+      },
+    );
 
-    return await this.getProvidersForApi(allProviders.filter(
-        (x) => featuredProviders.includes(x.identity.name?.toLowerCase())
-      ));
+    return await this.getProvidersForApi(
+      allProviders.filter((x) =>
+        featuredProviders.includes(x.identity.name?.toLowerCase()),
+      ),
+    );
   }
 
   async getProvider(provider: string): Promise<Provider> {
     const cachedProviders = await this.cacheManagerService.getAllProviders();
     if (!!cachedProviders) {
-      const foundProvider = cachedProviders.find(p => p.contract === provider);
+      const foundProvider = cachedProviders.find(
+        (p) => p.contract === provider,
+      );
       if (!!foundProvider) {
         return foundProvider;
       }
     }
     const foundProvider = await this.providerManager.getProviderInfo(provider);
-    return (await this.getProvidersForApi([new ProviderWithData(foundProvider)]))[0];
+    return (
+      await this.getProvidersForApi([new ProviderWithData(foundProvider)])
+    )[0];
   }
 
-  async getProviderDelegations(provider: string, page: number): Promise<ProviderDelegation[]> {
-    const delegations =  await this.elrondElasticService.getDelegationsForContract(provider, page);
+  async getProviderDelegations(
+    provider: string,
+    page: number,
+  ): Promise<ProviderDelegation[]> {
+    const delegations =
+      await this.elrondElasticService.getDelegationsForContract(provider, page);
     if (!delegations) {
       return [];
     }
-    return delegations.map(e => ProviderDelegation.fromAddressActiveContract(e));
+    return delegations.map((e) =>
+      ProviderDelegation.fromAddressActiveContract(e),
+    );
   }
 
-  private async getProvidersForApi(providers: ProviderWithData[]): Promise<Provider[]> {
-    return await asyncPool(4, providers, async provider => {
+  private async getProvidersForApi(
+    providers: ProviderWithData[],
+  ): Promise<Provider[]> {
+    return await asyncPool(4, providers, async (provider) => {
       try {
-        let stakingProvider = new Provider(
-          provider.identity,
-        );
+        let stakingProvider = new Provider(provider.identity);
 
-        stakingProvider.setFromContractConfig(await this.getContractConfig(provider.identity.contract));
-        stakingProvider.setFromContractData(await this.getGlobalContractData(provider.identity.contract));
-        stakingProvider.setFromFeeChanges(await this.cacheManagerService.getContractFeeChange(provider.identity.contract));
+        stakingProvider.setFromContractConfig(
+          await this.getContractConfig(provider.identity.contract),
+        );
+        stakingProvider.setFromContractData(
+          await this.getGlobalContractData(provider.identity.contract),
+        );
+        stakingProvider.setFromFeeChanges(
+          await this.cacheManagerService.getContractFeeChange(
+            provider.identity.contract,
+          ),
+        );
         stakingProvider = this.updateDelegationInfo(stakingProvider);
         stakingProvider.ownerBelowRequiredBalanceThreshold =
-          await this.isContractOwnerBellowStakedRequiredThreshold(stakingProvider.contract, stakingProvider.owner);
+          await this.isContractOwnerBellowStakedRequiredThreshold(
+            stakingProvider.contract,
+            stakingProvider.owner,
+          );
 
         return stakingProvider;
       } catch (e) {
@@ -133,16 +157,21 @@ export class ProvidersService {
     });
   }
 
-  private async isContractOwnerBellowStakedRequiredThreshold(contractAddress: string, ownerAddress: string) {
+  private async isContractOwnerBellowStakedRequiredThreshold(
+    contractAddress: string,
+    ownerAddress: string,
+  ) {
     try {
       const stakedBalance = QueryResponseHelper.handleQueryAmountResponse(
         await this.elrondProxyService.getUserActiveStake(
           contractAddress,
           ownerAddress,
-        ));
+        ),
+      );
       return new BigNumber(stakedBalance).isLessThan(
-        new BigNumber(elrondConfig.minimumAmountOwner, 10)
-          .multipliedBy(new BigNumber(1000000000000000000))
+        new BigNumber(elrondConfig.minimumAmountOwner, 10).multipliedBy(
+          new BigNumber(1000000000000000000),
+        ),
       );
     } catch (e) {
       this.logger.error('Error comparing owner staked amount', {
@@ -154,23 +183,22 @@ export class ProvidersService {
     }
   }
 
-  private async getGlobalContractData(contract: string)
-    : Promise<GlobalContractDataResponseDto> {
-
+  private async getGlobalContractData(
+    contract: string,
+  ): Promise<GlobalContractDataResponseDto> {
     const [
       totalActiveStake,
       totalUnStaked,
       totalCumulatedRewards,
       numUsers,
       numNodes,
-    ] =
-      await Promise.all([
-        this.getTotalContractAmount('getTotalActiveStake', contract),
-        this.getTotalContractAmount('getTotalUnStaked', contract),
-        this.getTotalCumulatedRewards(contract),
-        this.getTotalContractAmount('getNumUsers', contract),
-        this.getTotalContractAmount('getNumNodes', contract),
-      ]);
+    ] = await Promise.all([
+      this.getTotalContractAmount('getTotalActiveStake', contract),
+      this.getTotalContractAmount('getTotalUnStaked', contract),
+      this.getTotalCumulatedRewards(contract),
+      this.getTotalContractAmount('getNumUsers', contract),
+      this.getTotalContractAmount('getNumNodes', contract),
+    ]);
 
     return new GlobalContractDataResponseDto(
       contract,
@@ -178,14 +206,17 @@ export class ProvidersService {
       totalUnStaked,
       totalCumulatedRewards,
       Number(numUsers),
-      Number(numNodes)
+      Number(numNodes),
     );
   }
 
   private async getTotalContractAmount(method: string, contract: string) {
     try {
       return QueryResponseHelper.handleQueryAmountResponse(
-        await this.elrondProxyService.getGlobalDelegationMethod(method, contract)
+        await this.elrondProxyService.getGlobalDelegationMethod(
+          method,
+          contract,
+        ),
       );
     } catch (e) {
       this.logger.error(`Error getting ${method}`, {
@@ -201,7 +232,7 @@ export class ProvidersService {
   private async getTotalCumulatedRewards(contract: string): Promise<string> {
     try {
       return QueryResponseHelper.handleQueryAmountResponse(
-        await this.elrondProxyService.getTotalCumulatedRewards(contract)
+        await this.elrondProxyService.getTotalCumulatedRewards(contract),
       );
     } catch (e) {
       this.logger.error('Error getting total cumulated rewards', {
@@ -214,18 +245,17 @@ export class ProvidersService {
   }
 
   private updateDelegationInfo(stakingProvider: Provider): Provider {
-    const maxAllowed = new BigNumber(stakingProvider.maxDelegationCap, 10).minus(
-      new BigNumber(stakingProvider.totalActiveStake, 10)
-    );
+    const maxAllowed = new BigNumber(
+      stakingProvider.maxDelegationCap,
+      10,
+    ).minus(new BigNumber(stakingProvider.totalActiveStake, 10));
     if (maxAllowed.isNegative()) {
       stakingProvider.maxDelegateAmountAllowed = '0';
     } else {
       stakingProvider.maxDelegateAmountAllowed = maxAllowed.toString(10);
     }
 
-    if (
-      stakingProvider.checkCapOnRedelegate
-    ) {
+    if (stakingProvider.checkCapOnRedelegate) {
       stakingProvider.maxRedelegateAmountAllowed =
         stakingProvider.maxDelegateAmountAllowed;
     }
@@ -233,7 +263,9 @@ export class ProvidersService {
     return stakingProvider;
   }
 
-  private async getContractConfig(contract: string): Promise<ContractConfigResponseDto> {
+  private async getContractConfig(
+    contract: string,
+  ): Promise<ContractConfigResponseDto> {
     try {
       const result = await this.elrondProxyService.getContractConfig(contract);
 
@@ -241,9 +273,14 @@ export class ProvidersService {
         return null;
       }
 
-      const response = ContractConfigResponseDto.fromContractConfig(result.getReturnDataParts());
+      const response = ContractConfigResponseDto.fromContractConfig(
+        result.getReturnDataParts(),
+      );
 
-      response.aprValue = await this.delegationAprService.getProviderAPR(contract, Number(response.serviceFee));
+      response.aprValue = await this.delegationAprService.getProviderAPR(
+        contract,
+        Number(response.serviceFee),
+      );
       response.apr = response.aprValue.toFixed(2);
 
       return response;

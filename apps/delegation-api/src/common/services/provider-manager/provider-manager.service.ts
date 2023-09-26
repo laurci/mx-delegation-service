@@ -14,22 +14,27 @@ export class ProviderManagerService {
   constructor(
     private elrondProxyService: ElrondProxyService,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-    private readonly profileLoaderService: ProfileLoaderService
-  ) {
-  }
+    private readonly profileLoaderService: ProfileLoaderService,
+  ) { }
 
-  async getAllProvidersWithData(contracts: string[]): Promise<ProviderWithData[]> {
-    const providersWitInfo = await asyncPool(4, contracts, contract => this.getProviderInfo(contract));
+  async getAllProvidersWithData(
+    contracts: string[],
+  ): Promise<ProviderWithData[]> {
+    const providersWitInfo = await asyncPool(4, contracts, (contract) =>
+      this.getProviderInfo(contract),
+    );
 
     return providersWitInfo
-      .filter(provider => !!provider)
-      .map(provider => new ProviderWithData(provider));
+      .filter((provider) => !!provider)
+      .map((provider) => new ProviderWithData(provider));
   }
 
   async getProviderInfo(contract: string): Promise<ProviderContract> {
     const providerInfo = new ProviderContract(contract);
     try {
-      const contractMeta = await this.elrondProxyService.getContractMetaData(contract);
+      const contractMeta = await this.elrondProxyService.getContractMetaData(
+        contract,
+      );
       if (contractMeta.returnMessage !== '') {
         return providerInfo;
       }
@@ -68,7 +73,8 @@ export class ProviderManagerService {
 
   async getAllContractAddresses(): Promise<string[]> {
     try {
-      const scResponse = await this.elrondProxyService.getAllContractAddresses();
+      const scResponse =
+        await this.elrondProxyService.getAllContractAddresses();
       const data: Buffer[] = scResponse.getReturnDataParts();
       if (!data) {
         return null;
@@ -88,5 +94,4 @@ export class ProviderManagerService {
       });
     }
   }
-
 }
