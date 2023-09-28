@@ -11,7 +11,7 @@
     "prebuild": "rimraf dist",
     "build": "nest build",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",
-    "start:dev": "nest start --watch",
+    "start:dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 nest start --watch",
     "start-prof:dev": "nest start -e \"node --prof\" --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/apps/delegation-api/main",
